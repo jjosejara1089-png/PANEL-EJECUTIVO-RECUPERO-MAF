@@ -1,0 +1,632 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Command Center · Panel Ejecutivo MAF V2</title>
+<script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+<style>
+:root{
+  --navy:#0f4c66; --navy2:#123f53; --blue:#2b7da5; --light:#eef4f7;
+  --line:#cbd8df; --text:#17384a; --muted:#6d7e88; --white:#fff;
+  --header1:#dce8ee; --header2:#edf3f6; --group:#0f6c8f;
+  --subtotal:#e8f1f5; --total:#d4e5ec; --green:#2e7d32; --red:#c62828;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;font-family:Arial,Helvetica,sans-serif;color:var(--text);background:#f3f6f8}
+body{overflow:hidden}
+.app{display:flex;height:100vh}
+.sidebar{width:265px;min-width:265px;background:#f5f7f8;border-right:1px solid #b8c7cf;display:flex;flex-direction:column;overflow:hidden}
+.brand{margin:10px 9px 8px;background:var(--navy);color:white;border-radius:12px;padding:18px 18px 15px}
+.brand h1{margin:0;font-size:20px;letter-spacing:.5px}
+.brand p{margin:6px 0 0;font-size:11px;opacity:.85}
+.filter-scroll{padding:0 9px 10px;overflow:auto;flex:1}
+.filter-title{font-weight:800;font-size:12px;letter-spacing:1px;color:#5d6e78;margin:7px 4px}
+.filter-card{background:#fff;border:1px solid #b9ccd6;border-radius:8px;margin-bottom:8px;overflow:hidden}
+.filter-head{height:36px;padding:9px 10px;font-weight:800;font-size:13px;display:flex;justify-content:space-between;align-items:center}
+.filter-head .tools{font-size:11px;color:#738791}
+.filter-body{padding:0 8px 8px;max-height:165px;overflow:auto;border-top:1px solid #edf1f3}
+.search{width:100%;margin:7px 0;padding:7px 8px;border:1px solid #c8d6dd;border-radius:5px;font-size:11px}
+.option{display:flex;align-items:center;gap:7px;padding:5px 2px;font-size:11px;cursor:pointer}
+.option input{accent-color:var(--navy);width:13px;height:13px}
+.side-actions{padding:8px 9px;border-top:1px solid #cad7dd;background:#f5f7f8;display:flex;gap:8px}
+button{border:1px solid #b9ccd6;background:white;color:var(--navy2);font-weight:800;border-radius:7px;padding:8px 12px;cursor:pointer}
+button.primary{background:var(--navy);color:white;border-color:var(--navy)}
+button:hover{filter:brightness(.97)}
+.main{flex:1;min-width:0;display:flex;flex-direction:column;overflow:hidden}
+.topbar{padding:14px 18px 9px;background:#eef3f6;border-bottom:1px solid #ccd9df;display:flex;align-items:center;justify-content:space-between;gap:14px}
+.title h2{margin:0;color:#0e4e69;font-size:24px}
+.title p{margin:5px 0 0;color:#6b7d86;font-size:12px}
+.actions{display:flex;align-items:center;gap:7px;white-space:nowrap}
+.status{font-size:10px;color:#60727b}
+.status b{color:var(--green)}
+.content{overflow:auto;padding:10px 14px 30px}
+.kpis{display:grid;grid-template-columns:repeat(6,minmax(130px,1fr));gap:8px;margin-bottom:10px}
+.kpi{background:#fff;border:1px solid #d4e0e5;border-radius:10px;padding:11px 13px;min-height:76px;box-shadow:0 1px 3px rgba(25,55,70,.05)}
+.kpi .label{font-size:10px;font-weight:900;color:#637782;letter-spacing:.5px;text-transform:uppercase}
+.kpi .value{font-size:21px;font-weight:900;color:#075174;margin-top:8px}
+.kpi .sub{font-size:9px;color:#72838c;margin-top:4px}
+.panel{background:#fff;border:1px solid #cbd9df;border-radius:9px;margin-bottom:11px;overflow:hidden}
+.panel-title{height:36px;padding:10px 11px;background:#fff;font-weight:900;color:#174c63;font-size:12px;border-bottom:1px solid #d8e2e7;display:flex;justify-content:space-between;align-items:center}
+.panel-title small{font-weight:normal;color:#778991}
+.table-wrap{overflow:auto;max-height:420px}
+table{border-collapse:separate;border-spacing:0;width:max-content;min-width:100%;font-size:9px}
+th,td{border-right:1px solid #d9e2e7;border-bottom:1px solid #d9e2e7;padding:5px 6px;white-space:nowrap;text-align:right}
+thead th{position:sticky;top:0;z-index:10;background:var(--header2);color:#355968;font-weight:900}
+thead tr:first-child th{background:var(--header1);font-size:9px;text-align:center}
+thead tr:nth-child(2) th{text-align:center}
+
+/* Primera columna congelada: no se mezcla con las columnas al desplazar horizontalmente */
+table th:first-child,table td:first-child{
+  position:sticky;
+  left:0;
+  width:205px;
+  min-width:205px;
+  max-width:205px;
+  text-align:left;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  border-right:2px solid #a9c0ca;
+}
+thead th:first-child{z-index:30;background:var(--header1)}
+tbody tr.leaf td:first-child{background:#fff;z-index:20}
+tbody tr.group td:first-child{background:var(--group);z-index:25}
+tbody tr.subtotal td:first-child{background:var(--subtotal);z-index:25}
+tbody tr.total td:first-child{background:var(--total);z-index:25}
+tbody tr.group td{background:var(--group);color:#fff;font-weight:900}
+tbody tr.group td:first-child{background:var(--group)}
+tbody tr.subtotal td{background:var(--subtotal);font-weight:900}
+tbody tr.total td{background:var(--total);font-weight:900}
+tbody tr.leaf td:first-child{padding-left:16px}
+tbody tr:hover td{background:#f8fbfc}
+tbody tr.group:hover td{background:var(--group)}
+tbody tr.subtotal:hover td{background:var(--subtotal)}
+tbody tr.total:hover td{background:var(--total)}
+.sticky-label{position:sticky;left:0}
+.percent{font-variant-numeric:tabular-nums}
+.money{font-variant-numeric:tabular-nums}
+.empty{padding:20px;color:#7b8a91;text-align:center}
+.legend{font-size:9px;color:#7a8a92;padding:6px 10px;background:#fafcfd;border-top:1px solid #e2e9ed}
+@media(max-width:1200px){.sidebar{width:235px;min-width:235px}.kpis{grid-template-columns:repeat(4,minmax(140px,1fr))}}
+@media(max-width:850px){.sidebar{width:210px;min-width:210px}.kpis{grid-template-columns:repeat(2,minmax(150px,1fr))}.title h2{font-size:19px}}
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar">
+    <div class="brand">
+      <h1>COMMAND CENTER</h1>
+      <p>PANEL EJECUTIVO · RECUPERO MAF</p>
+    </div>
+    <div class="filter-scroll">
+      <div class="filter-title">FILTROS DEL PANEL</div>
+      <div id="filters"></div>
+    </div>
+    <div class="side-actions">
+      <button class="primary" onclick="selectAllFilters()">Todos</button>
+      <button onclick="clearFilters()">Limpiar</button>
+    </div>
+  </aside>
+
+  <main class="main">
+    <header class="topbar">
+      <div class="title">
+        <h2>Panel Ejecutivo de Recuperación</h2>
+        <p>Seguimiento de cartera, recupero, contacto, cobertura, intensidad y promesas · ciclos 04 / 11 / 18 / 25</p>
+      </div>
+      <div class="actions">
+        <button onclick="document.getElementById('fileInput').click()">Cargar Excel</button>
+        <button onclick="exportSummary()">Exportar resumen</button>
+        <input id="fileInput" type="file" accept=".xlsx,.xls" style="display:none" onchange="loadExcel(event)">
+        <span class="status" id="status">Esperando archivo · <b>cargue maf_2_v5.xlsx</b></span>
+      </div>
+    </header>
+
+    <section class="content">
+      <div id="kpis" class="kpis"></div>
+
+      <section class="panel">
+        <div class="panel-title">
+          <span>Tipo de deudor + tipo de contacto KPI</span>
+          <small>estructura equivalente al BOCETO · 202607 / 202608 / 202609</small>
+        </div>
+        <div id="table1" class="table-wrap"></div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-title">
+          <span>Tipo de deudor + acción prejudicial</span>
+          <small>detalle operativo · 202607 / 202608 / 202609</small>
+        </div>
+        <div id="table2" class="table-wrap"></div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-title">
+          <span>Macro zona + departamento legal</span>
+          <small>detalle geográfico · 202607 / 202608 / 202609</small>
+        </div>
+        <div id="table3" class="table-wrap"></div>
+      </section>
+    </section>
+  </main>
+</div>
+
+<script>
+'use strict';
+
+const EXPECTED_FILE = 'maf_2_v5.xlsx';
+const SHEET = 'MAF Evaluacion';
+
+const MONTHS = [
+  {key:'Jul', label:'202607'},
+  {key:'Ago', label:'202608'},
+  {key:'Set', label:'202609'}
+];
+
+const FILTERS = [
+  {key:'DIA', field:'Date.Day', label:'Día'},
+  {key:'RESPP', field:'RESPP', label:'RESPP'},
+  {key:'ESTADO', field:'ESTADO', label:'ESTADO'},
+  {key:'TIPO_CUOTA', field:'TIPO_CUOTA', label:'TIPO_CUOTA'},
+  {key:'TRAMO_CARTERA', field:'TRAMO_CARTERA', label:'TRAMO_CARTERA'},
+  {key:'CICLO2', field:'CICLO2', label:'CICLO2'},
+  {key:'RANGO_CUOTA_1', field:'RANGO_CUOTA_1', label:'RANGO_CUOTA_1'},
+  {key:'MACRO_ZONA', field:'MACRO_ZONA', label:'MACRO_ZONA'},
+  {key:'CALIFICACION_SBS', field:'CALIFICACION_SBS', label:'CALIFICACION_SBS'},
+  {key:'AVANCE_CREDITO_GRUPO', field:'AVANCE_CREDITO_GRUPO', label:'AVANCE_CREDITO_GRUPO'},
+  {key:'TIPO_DEUDOR', field:'TIPO_DEUDOR', label:'TIPO_DEUDOR'},
+  {key:'ASESOR_ASIGN', field:'ASESOR_ASIGN', label:'ASESOR_ASIGN'}
+];
+
+let DATA = [];
+let HEADERS = [];
+let FILTER_STATE = {};
+
+const col = name => name;
+const n = v => {
+  if(v===null || v===undefined || v==='') return 0;
+  if(typeof v==='number') return isFinite(v)?v:0;
+  const x=String(v).replace(/[$,%\s,]/g,'').replace(/,/g,'.');
+  const z=parseFloat(x);
+  return isFinite(z)?z:0;
+};
+const s = v => v===null || v===undefined ? '' : String(v).trim();
+
+function norm(v){ return s(v).toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g,''); }
+
+function monthKey(v){
+  const x=norm(v);
+  if(x==='JUL' || x==='JULIO' || x==='202607') return 'Jul';
+  if(x==='AGO' || x==='AGOSTO' || x==='202608') return 'Ago';
+  if(x==='SET' || x==='SEP' || x==='SEPTIEMBRE' || x==='202609') return 'Set';
+  return s(v);
+}
+
+function cleanValue(field,v){
+  if(field==='CICLO2'){
+    const x=String(v??'').trim();
+    if(x==='') return '';
+    return x.replace(/\.0+$/,'').padStart(2,'0');
+  }
+  return s(v);
+}
+
+function uniqueKey(r){
+  const a=s(r.NID_PERSDEUDOR);
+  if(a) return 'NID:'+a;
+  const b=s(r.CODIGO_CLIENTE);
+  if(b) return 'CLI:'+b;
+  const c=s(r.OPERACION);
+  if(c) return 'OP:'+c;
+  return 'ROW:'+DATA.indexOf(r);
+}
+
+function isManaged(r){
+  return n(r.CANT_GEST_CALL)>0;
+}
+
+function calcMetrics(rows){
+  const qUnico = rows.reduce((a,r)=>a+n(r['UNICO SOCIO']),0);
+  const cartera = rows.reduce((a,r)=>a+n(r.CUOTA_DOLARIZADA),0);
+  const recupero = rows.reduce((a,r)=>a+n(r.MONTO_PAGO_DOLARIZADO),0);
+  const gest = rows.reduce((a,r)=>a+n(r.CANT_GEST_CALL),0);
+  const contact = rows.reduce((a,r)=>a+n(r.CONTACTO),0);
+  const prom = rows.reduce((a,r)=>a+n(r.FLAG_PROMESA),0);
+  const promCum = rows.reduce((a,r)=>a+n(r.FLAG_PROMESA_CUMPLIDA),0);
+  const pagoProm = rows.reduce((a,r)=>a+n(r.MONTO_PAGO_PROMESA),0);
+  const qCamp = rows.reduce((a,r)=>a+(s(r.MEJOR_RESULTADO_CAMP)?1:0),0);
+
+  const assigned = new Set();
+  const managed = new Set();
+  rows.forEach(r=>{
+    const k=uniqueKey(r);
+    assigned.add(k);
+    if(isManaged(r)) managed.add(k);
+  });
+
+  return {
+    qUnico, cartera, recupero, gest, contact, prom, promCum, pagoProm, qCamp,
+    ef: cartera?recupero/cartera:0,
+    cd: gest?contact/gest:0,
+    cobertura: assigned.size?managed.size/assigned.size:0,
+    intensidad: qUnico?gest/qUnico:0,
+    efPdp: prom?promCum/prom:0
+  };
+}
+
+function filteredData(){
+  return DATA.filter(r=>{
+    for(const f of FILTERS){
+      const selected=FILTER_STATE[f.key];
+      if(selected && selected.size===0) return false;
+      if(selected && selected.size>0){
+        const value=cleanValue(f.field,r[f.field]);
+        if(!selected.has(value)) return false;
+      }
+    }
+    return true;
+  });
+}
+
+function orderedValues(field, values){
+  const arr=[...values];
+  const orderMap={
+    'CICLO2':['04','11','18','25'],
+    'TIPO_CUOTA':['NORMAL','TAXI','BIGTICKET','BALON','1RA4TA5TA','TOP'],
+    'TRAMO_CARTERA':['PREVENTIVO','TRAMO 1','TRAMO 2','TRAMO 3'],
+    'MACRO_ZONA':['CALLAO','LIMA','PROVINCIA'],
+    'TIPO_DEUDOR':['NUEVO','RECURRENTE']
+  };
+  if(field==='Date.Day'){
+    return arr.sort((a,b)=>Number(a)-Number(b));
+  }
+  const ord=orderMap[field];
+  if(ord){
+    return arr.sort((a,b)=>{
+      const aa=ord.indexOf(norm(a)), bb=ord.indexOf(norm(b));
+      if(aa<0 && bb<0) return String(a).localeCompare(String(b),'es');
+      if(aa<0) return 1; if(bb<0) return -1;
+      return aa-bb;
+    });
+  }
+  return arr.sort((a,b)=>String(a).localeCompare(String(b),'es',{numeric:true,sensitivity:'base'}));
+}
+
+function escapeHtml(v){
+  return String(v ?? '').replace(/[&<>"']/g, function(m){
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m];
+  });
+}
+
+function buildFilters(){
+  const root=document.getElementById('filters');
+  root.innerHTML='';
+  FILTERS.forEach(f=>{
+    const values=[...new Set(DATA.map(r=>cleanValue(f.field,r[f.field])).filter(v=>v!==''))];
+    const vals=orderedValues(f.field,values);
+    FILTER_STATE[f.key]=new Set(vals);
+
+    const card=document.createElement('div');
+    card.className='filter-card';
+    card.dataset.filterKey=f.key;
+    card.innerHTML=`
+      <div class="filter-head">
+        <span>${escapeHtml(f.label)}</span>
+        <span class="tools" id="count-${f.key}">Todos</span>
+      </div>
+      <div class="filter-body">
+        <input class="search" placeholder="Buscar..." oninput="filterOptions(this)">
+        <label class="option all-option">
+          <input type="checkbox" checked data-all="${f.key}" onchange="toggleAllFilter('${f.key}',this)">
+          <span>Todos</span>
+        </label>
+        <div class="opts"></div>
+      </div>`;
+    const opts=card.querySelector('.opts');
+
+    vals.forEach(v=>{
+      const lab=document.createElement('label');
+      lab.className='option';
+      lab.dataset.value=v.toLowerCase();
+      lab.innerHTML=`
+        <input type="checkbox" checked data-filter="${f.key}" value="${escapeHtml(v)}"
+               onchange="filterChanged(this)">
+        <span>${escapeHtml(v)}</span>`;
+      opts.appendChild(lab);
+    });
+    root.appendChild(card);
+    updateFilterHeader(f.key);
+  });
+}
+
+function updateFilterHeader(key){
+  const state=FILTER_STATE[key]||new Set();
+  const total=document.querySelectorAll(`#filters input[data-filter="${key}"]`).length;
+  const el=document.getElementById(`count-${key}`);
+  const all=document.querySelector(`#filters input[data-all="${key}"]`);
+  if(el){
+    el.textContent = state.size===total ? 'Todos' : `${state.size} seleccionado${state.size===1?'':'s'}`;
+  }
+  if(all) all.checked=(total>0 && state.size===total);
+}
+
+function filterOptions(input){
+  const q=input.value.toLowerCase().trim();
+  input.parentElement.querySelectorAll('.opts .option').forEach(o=>{
+    o.style.display=o.dataset.value.includes(q)?'flex':'none';
+  });
+}
+
+function toggleAllFilter(key, checkbox){
+  const boxes=[...document.querySelectorAll(`#filters input[data-filter="${key}"]`)];
+  const state=FILTER_STATE[key]||new Set();
+  if(checkbox.checked){
+    boxes.forEach(b=>{b.checked=true;state.add(b.value);});
+  }else{
+    boxes.forEach(b=>b.checked=false);
+    state.clear();
+  }
+  FILTER_STATE[key]=state;
+  updateFilterHeader(key);
+  render();
+}
+
+function filterChanged(cb){
+  const key=cb.dataset.filter;
+  const set=FILTER_STATE[key]||new Set();
+  if(cb.checked) set.add(cb.value); else set.delete(cb.value);
+  FILTER_STATE[key]=set;
+  updateFilterHeader(key);
+  render();
+}
+
+function selectAllFilters(){
+  FILTERS.forEach(f=>{
+    const boxes=[...document.querySelectorAll(`#filters input[data-filter="${f.key}"]`)];
+    boxes.forEach(c=>c.checked=true);
+    const all=document.querySelector(`#filters input[data-all="${f.key}"]`);
+    if(all) all.checked=true;
+    FILTER_STATE[f.key]=new Set(boxes.map(x=>x.value));
+    updateFilterHeader(f.key);
+  });
+  render();
+}
+
+function clearFilters(){
+  FILTERS.forEach(f=>{
+    const boxes=[...document.querySelectorAll(`#filters input[data-filter="${f.key}"]`)];
+    boxes.forEach(c=>c.checked=false);
+    const all=document.querySelector(`#filters input[data-all="${f.key}"]`);
+    if(all) all.checked=false;
+    FILTER_STATE[f.key]=new Set();
+    updateFilterHeader(f.key);
+  });
+  render();
+}
+
+function kpiCard(label,value,sub){
+  return `<div class="kpi"><div class="label">${label}</div><div class="value">${value}</div><div class="sub">${sub}</div></div>`;
+}
+function money(v){ return '$ '+Math.round(v).toLocaleString('en-US'); }
+function pct(v){ return (v*100).toFixed(1)+'%'; }
+function numFmt(v){ return Math.round(v).toLocaleString('en-US'); }
+function dec(v){ return Number(v||0).toFixed(1); }
+
+function renderKPIs(){
+  const rows=filteredData();
+  const m=calcMetrics(rows);
+  document.getElementById('kpis').innerHTML=[
+    kpiCard('Clientes únicos',numFmt(m.qUnico),'SUM UNICO SOCIO'),
+    kpiCard('Cartera asignada',money(m.cartera),'CUOTA_DOLARIZADA'),
+    kpiCard('Recupero',money(m.recupero),'MONTO_PAGO_DOLARIZADO'),
+    kpiCard('Efectividad cartera',pct(m.ef),'META 65%'),
+    kpiCard('Contactados',numFmt(m.contact),'CONTACTO'),
+    kpiCard('% CD',pct(m.cd),'CONTACTO / CANT_GEST_CALL'),
+    kpiCard('Cobertura única',pct(m.cobertura),'clientes únicos gestionados / asignados'),
+    kpiCard('Intensidad',dec(m.intensidad),'gestiones call / Q_Unico'),
+    kpiCard('Promesas',numFmt(m.prom),'FLAG_PROMESA'),
+    kpiCard('Promesas cumplidas',numFmt(m.promCum),'FLAG_PROMESA_CUMPLIDA'),
+    kpiCard('Pago de promesas',money(m.pagoProm),'MONTO_PAGO_PROMESA'),
+    kpiCard('Efectividad PDP',pct(m.efPdp),'Q_PROMESA_CUMPLIDA / Q_PROMESA')
+  ].join('');
+}
+
+const INDICATORS=[
+  ['Q_Unico','qUnico'],
+  ['Asig. Cartera_Dolar','cartera'],
+  ['Monto Recupero','recupero'],
+  ['% Efec. Cartera','ef'],
+  ['% CD','cd'],
+  ['% Cobertura','cobertura'],
+  ['Intensidad','intensidad'],
+  ['Q Camp','qCamp'],
+  ['Q_PROMESA','prom'],
+  ['Q_PROMESA_CUMPLIDA','promCum'],
+  ['PAGO_PROMESA','pagoProm'],
+  ['% Efect. Promesa','efPdp']
+];
+
+function metricValue(rows,key){
+  const m=calcMetrics(rows);
+  return m[key]||0;
+}
+function fmtIndicator(key,v){
+  if(['cartera','recupero','pagoProm'].includes(key)) return '$ '+Number(v||0).toLocaleString('en-US',{minimumFractionDigits:1,maximumFractionDigits:1});
+  if(['ef','cd','cobertura','efPdp'].includes(key)) return (Number(v||0)*100).toFixed(1)+'%';
+  if(key==='intensidad') return Number(v||0).toFixed(1);
+  if(['qUnico','qCamp','prom','promCum'].includes(key)) return Math.round(v||0).toLocaleString('en-US');
+  return Math.round(v||0).toLocaleString('en-US');
+}
+
+function buildGroupedTable(containerId, groupField, leafField){
+  const rows=filteredData();
+  const groups=orderedValues(groupField,[...new Set(rows.map(r=>cleanValue(groupField,r[groupField])).filter(Boolean))]);
+  const leavesByGroup={};
+  groups.forEach(g=>{
+    leavesByGroup[g]=orderedValues(leafField,[...new Set(rows.filter(r=>cleanValue(groupField,r[groupField])===g).map(r=>cleanValue(leafField,r[leafField])).filter(Boolean))]);
+  });
+
+  let html='<table><thead><tr><th rowspan="2">Detalle</th>';
+  INDICATORS.forEach(([label])=>html+=`<th colspan="3">${label}</th>`);
+  html+='</tr><tr><th>202607</th><th>202608</th><th>202609</th>';
+  for(let i=1;i<INDICATORS.length;i++) html+='<th>202607</th><th>202608</th><th>202609</th>';
+  html+='</tr></thead><tbody>';
+
+  const groupRows=[];
+  groups.forEach(g=>{
+    html+=`<tr class="group"><td>${escapeHtml(g)}</td>${INDICATORS.map(()=>'<td></td><td></td><td></td>').join('')}</tr>`;
+    const leaves=leavesByGroup[g];
+    leaves.forEach(leaf=>{
+      html+='<tr class="leaf"><td>'+escapeHtml(leaf)+'</td>';
+      MONTHS.forEach(mon=>{
+        const rr=rows.filter(r=>cleanValue(groupField,r[groupField])===g && cleanValue(leafField,r[leafField])===leaf && monthKey(r.MES)===mon.key);
+        const m=calcMetrics(rr);
+        INDICATORS.forEach(([,key])=>html+=`<td>${fmtIndicator(key,m[key])}</td>`);
+      });
+      html+='</tr>';
+    });
+    html+='<tr class="subtotal"><td>Subtotal '+escapeHtml(g)+'</td>';
+    MONTHS.forEach(mon=>{
+      const rr=rows.filter(r=>cleanValue(groupField,r[groupField])===g && monthKey(r.MES)===mon.key);
+      const m=calcMetrics(rr);
+      INDICATORS.forEach(([,key])=>html+=`<td>${fmtIndicator(key,m[key])}</td>`);
+    });
+    html+='</tr>';
+  });
+
+  html+='<tr class="total"><td>Total general</td>';
+  MONTHS.forEach(mon=>{
+    const rr=rows.filter(r=>monthKey(r.MES)===mon.key);
+    const m=calcMetrics(rr);
+    INDICATORS.forEach(([,key])=>html+=`<td>${fmtIndicator(key,m[key])}</td>`);
+  });
+  html+='</tr></tbody></table>';
+  document.getElementById(containerId).innerHTML=html;
+}
+
+function renderTables(){
+  buildGroupedTable('table1','TIPO_DEUDOR','MEJOR_TIPO_CONTACTO_KPI');
+  buildGroupedTable('table2','TIPO_DEUDOR','CODIGO_ACCION_PREJUDICIAL');
+  buildGroupedTable('table3','MACRO_ZONA','DEPARTAMENTO_LEGAL');
+}
+
+function render(){
+  if(!DATA.length){
+    document.getElementById('kpis').innerHTML='<div class="kpi"><div class="label">Estado</div><div class="value">—</div><div class="sub">Cargue maf_2_v5.xlsx</div></div>';
+    ['table1','table2','table3'].forEach(id=>document.getElementById(id).innerHTML='<div class="empty">Cargue el archivo <b>maf_2_v5.xlsx</b> para visualizar el panel.</div>');
+    return;
+  }
+  const hasEmptyFilter=FILTERS.some(f=>FILTER_STATE[f.key] && FILTER_STATE[f.key].size===0);
+  if(hasEmptyFilter){
+    document.getElementById('kpis').innerHTML=[
+      kpiCard('Clientes únicos','—','Seleccione al menos un valor en cada filtro'),
+      kpiCard('Cartera asignada','—',''),kpiCard('Recupero','—',''),
+      kpiCard('Efectividad cartera','—',''),kpiCard('Contactados','—',''),
+      kpiCard('% CD','—',''),kpiCard('Cobertura única','—',''),
+      kpiCard('Intensidad','—',''),kpiCard('Promesas','—',''),
+      kpiCard('Promesas cumplidas','—',''),kpiCard('Pago de promesas','—',''),
+      kpiCard('Efectividad PDP','—','')
+    ].join('');
+    ['table1','table2','table3'].forEach(id=>document.getElementById(id).innerHTML='<div class="empty">No hay selección activa. Use <b>Todos</b> o seleccione uno o varios valores.</div>');
+    return;
+  }
+  renderKPIs();
+  renderTables();
+}
+
+function normalizeRows(json){
+  if(!json.length) return [];
+  const available=Object.keys(json[0]);
+  const required=['MES','CICLO2','TRAMO_CARTERA','TIPO_CUOTA','RESPP','ESTADO','RANGO_CUOTA_1','MACRO_ZONA','CALIFICACION_SBS','AVANCE_CREDITO_GRUPO','TIPO_DEUDOR','ASESOR_ASIGN','UNICO SOCIO','CUOTA_DOLARIZADA','MONTO_PAGO_DOLARIZADO','CONTACTO','CANT_GEST_CALL','MEJOR_RESULTADO_CAMP','FLAG_PROMESA','FLAG_PROMESA_CUMPLIDA','MONTO_PAGO_PROMESA','NID_PERSDEUDOR','MEJOR_TIPO_CONTACTO_KPI','CODIGO_ACCION_PREJUDICIAL'];
+  const missing=required.filter(x=>!available.includes(x));
+  if(missing.length) throw new Error('Faltan columnas: '+missing.join(', '));
+  return json.map(r=>{
+    const x={...r};
+    x['Date.Day']=deriveDay(r);
+    return x;
+  });
+}
+function deriveDay(r){
+  const candidates=['FECHA_GESTION','ULT_FECHA_GESTION','FECHA_PAGO'];
+  for(const f of candidates){
+    const v=r[f];
+    if(v instanceof Date && !isNaN(v)) return String(v.getDate());
+    if(typeof v==='number'){
+      const d=XLSX.SSF.parse_date_code(v);
+      if(d && d.d) return String(d.d);
+    }
+    const str=s(v);
+    const m=str.match(/(?:^|[-/])(\d{1,2})(?:[-/]|$)/);
+    if(m) return String(Number(m[1]));
+  }
+  return '';
+}
+
+function loadExcel(event){
+  const file=event.target.files?.[0];
+  if(!file) return;
+  const name=file.name.toLowerCase();
+  if(name!==EXPECTED_FILE){
+    setStatus('Archivo incorrecto. Seleccione maf_2_v5.xlsx',true);
+    return;
+  }
+  const reader=new FileReader();
+  reader.onload=e=>{
+    try{
+      const wb=XLSX.read(new Uint8Array(e.target.result),{type:'array',cellDates:true});
+      if(!wb.SheetNames.includes(SHEET)) throw new Error('No existe la hoja "'+SHEET+'".');
+      const ws=wb.Sheets[SHEET];
+      const json=XLSX.utils.sheet_to_json(ws,{defval:''});
+      DATA=normalizeRows(json);
+      HEADERS=Object.keys(DATA[0]||{});
+      buildFilters();
+      setStatus(`Archivo cargado: ${file.name} · Hoja: ${SHEET} · Registros: ${DATA.length.toLocaleString('es-PE')} · <b>OK</b>`);
+      render();
+    }catch(err){
+      console.error(err);
+      setStatus('Error: '+err.message,true);
+      DATA=[]; render();
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function setStatus(text,error=false){
+  const el=document.getElementById('status');
+  el.innerHTML=text;
+  el.style.color=error?'#c62828':'#60727b';
+}
+
+function exportSummary(){
+  if(!DATA.length){alert('Primero cargue maf_2_v5.xlsx.');return;}
+  const rows=filteredData();
+  const out=[];
+  MONTHS.forEach(mon=>{
+    const m=calcMetrics(rows.filter(r=>monthKey(r.MES)===mon.key));
+    out.push({
+      MES:mon.label,
+      Q_Unico:m.qUnico,
+      Asig_Cartera_Dolar:m.cartera,
+      Monto_Recupero:m.recupero,
+      Efec_Cartera:m.ef,
+      CD:m.cd,
+      Cobertura:m.cobertura,
+      Intensidad:m.intensidad,
+      Q_Camp:m.qCamp,
+      Q_Promesa:m.prom,
+      Q_Promesa_Cumplida:m.promCum,
+      Pago_Promesa:m.pagoProm,
+      Efect_Promesa:m.efPdp
+    });
+  });
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(out),'Resumen');
+  XLSX.writeFile(wb,'Resumen_Command_Center_MAF.xlsx');
+}
+
+render();
+</script>
+</body>
+</html>
