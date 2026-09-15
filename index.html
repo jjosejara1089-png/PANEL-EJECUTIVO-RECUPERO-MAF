@@ -90,6 +90,67 @@ tbody tr.total:hover td{background:var(--total)}
 .legend{font-size:9px;color:#7a8a92;padding:6px 10px;background:#fafcfd;border-top:1px solid #e2e9ed}
 @media(max-width:1200px){.sidebar{width:235px;min-width:235px}.kpis{grid-template-columns:repeat(4,minmax(140px,1fr))}}
 @media(max-width:850px){.sidebar{width:210px;min-width:210px}.kpis{grid-template-columns:repeat(2,minmax(150px,1fr))}.title h2{font-size:19px}}
+
+/* ============================================================
+   CABECERA DE INDICADORES · COLORES DEL BOCETO EXCEL
+   ============================================================ */
+table thead .metric-head,
+table thead .month-head{
+  font-weight:800;
+  text-align:center;
+  border-right:1px solid #c7d5dc;
+}
+
+table thead .metric-q_unico,
+table thead .metric-q-unico{
+  background:#d9eaf4 !important;
+  color:#0b4f71 !important;
+}
+table thead .metric-asig-cartera-dolar{
+  background:#f3d1bd !important;
+  color:#6b3f2b !important;
+}
+table thead .metric-monto-recupero{
+  background:#f3c8ad !important;
+  color:#6b3f2b !important;
+}
+table thead .metric-efec-cartera{
+  background:#f2d5d0 !important;
+  color:#6d3430 !important;
+}
+table thead .metric-cd{
+  background:#f2d5d0 !important;
+  color:#6d3430 !important;
+}
+table thead .metric-cobertura{
+  background:#dceecf !important;
+  color:#356129 !important;
+}
+table thead .metric-intensidad{
+  background:#dceecf !important;
+  color:#356129 !important;
+}
+table thead .metric-q-camp{
+  background:#d9eaf4 !important;
+  color:#0b4f71 !important;
+}
+table thead .metric-q-promesa,
+table thead .metric-q-promesa-cumplida,
+table thead .metric-pago-promesa{
+  background:#f3d1bd !important;
+  color:#6b3f2b !important;
+}
+table thead .metric-efect-promesa{
+  background:#f2d5d0 !important;
+  color:#6d3430 !important;
+}
+
+/* El cuerpo conserva el diseño existente; solo añadimos una separación
+   visual sutil entre grupos de indicadores. */
+table tbody .metric-cell{
+  border-right:1px solid #d7e0e5;
+}
+
 </style>
 </head>
 <body>
@@ -462,48 +523,129 @@ function fmtIndicator(key,v){
 
 function buildGroupedTable(containerId, groupField, leafField){
   const rows=filteredData();
-  const groups=orderedValues(groupField,[...new Set(rows.map(r=>cleanValue(groupField,r[groupField])).filter(Boolean))]);
+  const groups=orderedValues(
+    groupField,
+    [...new Set(
+      rows
+        .map(r=>cleanValue(groupField,r[groupField]))
+        .filter(Boolean)
+    )]
+  );
+
   const leavesByGroup={};
   groups.forEach(g=>{
-    leavesByGroup[g]=orderedValues(leafField,[...new Set(rows.filter(r=>cleanValue(groupField,r[groupField])===g).map(r=>cleanValue(leafField,r[leafField])).filter(Boolean))]);
+    leavesByGroup[g]=orderedValues(
+      leafField,
+      [...new Set(
+        rows
+          .filter(r=>cleanValue(groupField,r[groupField])===g)
+          .map(r=>cleanValue(leafField,r[leafField]))
+          .filter(Boolean)
+      )]
+    );
   });
 
+  /*
+   * IMPORTANTE:
+   * El BOCETO Excel organiza cada indicador como un bloque de 3 columnas:
+   *   Indicador -> 202607 | 202608 | 202609
+   *
+   * Por eso las celdas de datos deben generarse en el mismo orden:
+   *   INDICADOR -> MES
+   *
+   * La versión anterior generaba:
+   *   MES -> INDICADOR
+   * y por eso los valores quedaban desplazados respecto de la cabecera.
+   */
+
   let html='<table><thead><tr><th rowspan="2">Detalle</th>';
-  INDICATORS.forEach(([label])=>html+=`<th colspan="3">${label}</th>`);
-  html+='</tr><tr><th>202607</th><th>202608</th><th>202609</th>';
-  for(let i=1;i<INDICATORS.length;i++) html+='<th>202607</th><th>202608</th><th>202609</th>';
+
+  INDICATORS.forEach(([label])=>{
+    html+=`<th class="metric-head metric-${metricClass(label)}" colspan="3">${escapeHtml(label)}</th>`;
+  });
+
+  html+='</tr><tr>';
+
+  INDICATORS.forEach(([,key])=>{
+    MONTHS.forEach(mon=>{
+      html+=`<th class="month-head metric-${metricClass(label)}">${mon.label}</th>`;
+    });
+  });
+
   html+='</tr></thead><tbody>';
 
-  const groupRows=[];
   groups.forEach(g=>{
-    html+=`<tr class="group"><td>${escapeHtml(g)}</td>${INDICATORS.map(()=>'<td></td><td></td><td></td>').join('')}</tr>`;
+    html+=`<tr class="group"><td>${escapeHtml(g)}</td>`;
+    html+=INDICATORS.map(()=>'<td></td><td></td><td></td>').join('');
+    html+='</tr>';
+
     const leaves=leavesByGroup[g];
+
     leaves.forEach(leaf=>{
       html+='<tr class="leaf"><td>'+escapeHtml(leaf)+'</td>';
-      MONTHS.forEach(mon=>{
-        const rr=rows.filter(r=>cleanValue(groupField,r[groupField])===g && cleanValue(leafField,r[leafField])===leaf && monthKey(r.MES)===mon.key);
-        const m=calcMetrics(rr);
-        INDICATORS.forEach(([,key])=>html+=`<td>${fmtIndicator(key,m[key])}</td>`);
+
+      /*
+       * ORDEN CORRECTO DE DATOS:
+       * indicador 1: Jul/Ago/Set
+       * indicador 2: Jul/Ago/Set
+       * ...
+       */
+      INDICATORS.forEach(([,key])=>{
+        MONTHS.forEach(mon=>{
+          const rr=rows.filter(r=>
+            cleanValue(groupField,r[groupField])===g &&
+            cleanValue(leafField,r[leafField])===leaf &&
+            monthKey(r.MES)===mon.key
+          );
+
+          const m=calcMetrics(rr);
+          html+=`<td class="metric-cell metric-${metricClass(key)}">${fmtIndicator(key,m[key])}</td>`;
+        });
       });
+
       html+='</tr>';
     });
+
     html+='<tr class="subtotal"><td>Subtotal '+escapeHtml(g)+'</td>';
-    MONTHS.forEach(mon=>{
-      const rr=rows.filter(r=>cleanValue(groupField,r[groupField])===g && monthKey(r.MES)===mon.key);
-      const m=calcMetrics(rr);
-      INDICATORS.forEach(([,key])=>html+=`<td>${fmtIndicator(key,m[key])}</td>`);
+
+    INDICATORS.forEach(([,key])=>{
+      MONTHS.forEach(mon=>{
+        const rr=rows.filter(r=>
+          cleanValue(groupField,r[groupField])===g &&
+          monthKey(r.MES)===mon.key
+        );
+
+        const m=calcMetrics(rr);
+        html+=`<td class="metric-cell metric-${metricClass(key)}">${fmtIndicator(key,m[key])}</td>`;
+      });
     });
+
     html+='</tr>';
   });
 
   html+='<tr class="total"><td>Total general</td>';
-  MONTHS.forEach(mon=>{
-    const rr=rows.filter(r=>monthKey(r.MES)===mon.key);
-    const m=calcMetrics(rr);
-    INDICATORS.forEach(([,key])=>html+=`<td>${fmtIndicator(key,m[key])}</td>`);
+
+  INDICATORS.forEach(([,key])=>{
+    MONTHS.forEach(mon=>{
+      const rr=rows.filter(r=>monthKey(r.MES)===mon.key);
+      const m=calcMetrics(rr);
+      html+=`<td class="metric-cell metric-${metricClass(key)}">${fmtIndicator(key,m[key])}</td>`;
+    });
   });
+
   html+='</tr></tbody></table>';
+
   document.getElementById(containerId).innerHTML=html;
+}
+
+function metricClass(value){
+  const key=String(value||'').toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g,'')
+    .replace(/[^a-z0-9]+/g,'-')
+    .replace(/^-|-$/g,'');
+
+  return key || 'default';
 }
 
 function renderTables(){
