@@ -566,7 +566,7 @@ function buildGroupedTable(containerId, groupField, leafField){
 
   html+='</tr><tr>';
 
-  INDICATORS.forEach(([,key])=>{
+  INDICATORS.forEach(([label])=>{
     MONTHS.forEach(mon=>{
       html+=`<th class="month-head metric-${metricClass(label)}">${mon.label}</th>`;
     });
@@ -792,8 +792,13 @@ function exportSummary(){
   XLSX.writeFile(wb,'Resumen_Command_Center_MAF.xlsx');
 }
 
-render();
-autoLoadExcel();
+try {
+  render();
+  autoLoadExcel();
+} catch (err) {
+  console.error('Error de inicialización:', err);
+  setStatus('Error de inicialización: '+err.message,true);
+}
 </script>
 </body>
 </html>
