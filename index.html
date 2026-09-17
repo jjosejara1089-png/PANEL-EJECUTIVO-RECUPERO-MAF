@@ -320,7 +320,17 @@ function calcMetrics(rows){
   };
 }
 
-function filteredData(){
+function filteredData(includeCampaign=true){
+  /*
+   * Universo común: todos los filtros generales.
+   *
+   * includeCampaign=true  -> KPIs y exportación.
+   * includeCampaign=false -> tablas de detalle.
+   *
+   * CAMPAÑA_CARTERA es deliberadamente un filtro SOLO de KPIs.
+   * Las tablas mantienen sus tres meses completos y no se recortan
+   * por la campaña seleccionada.
+   */
   return DATA.filter(r=>{
     for(const f of FILTERS){
       const selected=FILTER_STATE[f.key];
@@ -330,6 +340,16 @@ function filteredData(){
         if(!selected.has(value)) return false;
       }
     }
+
+    if(includeCampaign){
+      if(CAMPAIGN_STATE && CAMPAIGN_STATE.size>0){
+        const campaign=cleanValue('CAMPAÑA_CARTERA',r.CAMPAÑA_CARTERA);
+        if(!CAMPAIGN_STATE.has(campaign)) return false;
+      }else{
+        return false;
+      }
+    }
+
     return true;
   });
 }
@@ -366,8 +386,8 @@ function escapeHtml(v){
 
 
 /* ============================================================
-   FILTRO CAMPAÑA_CARTERA · SOLO CONTROLA EL KPI RECUPERO
-   No modifica tablas ni los demás KPIs.
+   FILTRO CAMPAÑA_CARTERA
+   Solo KPIs y exportación. Las tablas de detalle lo ignoran.
    ============================================================ */
 function buildCampaignFilter(){
   const root=document.getElementById('campaignFilter');
@@ -447,16 +467,8 @@ function campaignChanged(cb){
 }
 
 function recoveryRows(){
-  /*
-   * RECUPERO se calcula exclusivamente sobre registros base filtrados.
-   * CAMPAÑA_CARTERA actúa únicamente sobre este KPI.
-   * Nunca se toman filas de subtotal/total.
-   */
-  const base=filteredData();
-  if(!CAMPAIGN_STATE || CAMPAIGN_STATE.size===0) return [];
-  return base.filter(r=>
-    CAMPAIGN_STATE.has(cleanValue('CAMPAÑA_CARTERA',r.CAMPAÑA_CARTERA))
-  );
+  /* Recupero es KPI: sí responde a CAMPAÑA_CARTERA. */
+  return filteredData(true);
 }
 
 function calcRecovery(rows){
@@ -590,16 +602,15 @@ function numFmt(v){ return Math.round(v).toLocaleString('en-US'); }
 function dec(v){ return Number(v||0).toFixed(1); }
 
 function renderKPIs(){
-  const rows=filteredData();
+  /* Todos los KPIs responden a CAMPAÑA_CARTERA. */
+  const rows=filteredData(true);
   const m=calcMetrics(rows);
-  const recuperoSeleccionado=(CAMPAIGN_STATE && CAMPAIGN_STATE.size>0)
-    ? calcRecovery(recoveryRows())
-    : null;
+  const recuperoSeleccionado=calcRecovery(recoveryRows());
 
   document.getElementById('kpis').innerHTML=[
-    kpiCard('Clientes únicos',numFmt(m.qUnico),'SUM UNICO SOCIO'),
-    kpiCard('Cartera asignada',money(m.cartera),'CUOTA_DOLARIZADA'),
-    kpiCard('Recupero',recuperoSeleccionado===null?'—':money(recuperoSeleccionado),'MONTO_PAGO_DOLARIZADO · campañas seleccionadas'),
+    kpiCard('Clientes únicos',numFmt(m.qUnico),'SUM UNICO SOCIO · filtros seleccionados'),
+    kpiCard('Cartera asignada',money(m.cartera),'CUOTA_DOLARIZADA · filtros seleccionados'),
+    kpiCard('Recupero',money(recuperoSeleccionado),'MONTO_PAGO_DOLARIZADO · filtros seleccionados'),
     kpiCard('Efectividad cartera',pct(m.ef),'META 65%'),
     kpiCard('Contactados',numFmt(m.contact),'CONTACTO'),
     kpiCard('% CD',pct(m.cd),'CONTACTO / CANT_GEST_CALL'),
@@ -640,7 +651,8 @@ function fmtIndicator(key,v){
 }
 
 function buildGroupedTable(containerId, groupField, leafField){
-  const rows=filteredData();
+  /* Tablas de detalle: ignoran CAMPAÑA_CARTERA, pero conservan los demás filtros. */
+  const rows=filteredData(false);
   const groups=orderedValues(
     groupField,
     [...new Set(
@@ -778,8 +790,11 @@ function render(){
     ['table1','table2','table3'].forEach(id=>document.getElementById(id).innerHTML='<div class="empty">Cargue el archivo <b>maf_2_v5.xlsx</b> para visualizar el panel.</div>');
     return;
   }
-  const hasEmptyFilter=FILTERS.some(f=>FILTER_STATE[f.key] && FILTER_STATE[f.key].size===0);
-  if(hasEmptyFilter){
+  const hasEmptyBaseFilter=FILTERS.some(f=>FILTER_STATE[f.key] && FILTER_STATE[f.key].size===0);
+  const hasEmptyCampaign=!CAMPAIGN_STATE || CAMPAIGN_STATE.size===0;
+
+  /* Los filtros generales son obligatorios para todo el panel. */
+  if(hasEmptyBaseFilter){
     document.getElementById('kpis').innerHTML=[
       kpiCard('Clientes únicos','—','Seleccione al menos un valor en cada filtro'),
       kpiCard('Cartera asignada','—',''),kpiCard('Recupero','—',''),
@@ -789,9 +804,29 @@ function render(){
       kpiCard('Promesas cumplidas','—',''),kpiCard('Pago de promesas','—',''),
       kpiCard('Efectividad PDP','—','')
     ].join('');
-    ['table1','table2','table3'].forEach(id=>document.getElementById(id).innerHTML='<div class="empty">No hay selección activa. Use <b>Todos</b> o seleccione uno o varios valores.</div>');
+    ['table1','table2','table3'].forEach(id=>document.getElementById(id).innerHTML='<div class="empty">No hay selección activa en los filtros generales.</div>');
     return;
   }
+
+  /*
+   * CAMPAÑA_CARTERA solo controla los KPIs.
+   * Si se desmarcan todas las campañas, los KPIs quedan sin universo,
+   * pero las tres tablas siguen mostrando información.
+   */
+  if(hasEmptyCampaign){
+    document.getElementById('kpis').innerHTML=[
+      kpiCard('Clientes únicos','—','Seleccione al menos una CAMPAÑA_CARTERA'),
+      kpiCard('Cartera asignada','—',''),kpiCard('Recupero','—',''),
+      kpiCard('Efectividad cartera','—',''),kpiCard('Contactados','—',''),
+      kpiCard('% CD','—',''),kpiCard('Cobertura única','—',''),
+      kpiCard('Intensidad','—',''),kpiCard('Promesas','—',''),
+      kpiCard('Promesas cumplidas','—',''),kpiCard('Pago de promesas','—',''),
+      kpiCard('Efectividad PDP','—','')
+    ].join('');
+    renderTables();
+    return;
+  }
+
   renderKPIs();
   renderTables();
 }
@@ -886,7 +921,8 @@ function setStatus(text,error=false){
 
 function exportSummary(){
   if(!DATA.length){alert('Primero cargue maf_2_v5.xlsx.');return;}
-  const rows=filteredData();
+  /* El resumen exportado corresponde a KPIs y sí usa CAMPAÑA_CARTERA. */
+  const rows=filteredData(true);
   const out=[];
   MONTHS.forEach(mon=>{
     const m=calcMetrics(rows.filter(r=>monthKey(r.MES)===mon.key));
