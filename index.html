@@ -22,6 +22,7 @@ body{overflow:hidden}
 .brand p{margin:6px 0 0;font-size:11px;opacity:.85}
 .filter-scroll{padding:0 9px 10px;overflow:auto;flex:1}
 .filter-title{font-weight:800;font-size:12px;letter-spacing:1px;color:#5d6e78;margin:7px 4px}
+#campaignFilter{margin-top:2px}
 .filter-card{background:#fff;border:1px solid #b9ccd6;border-radius:8px;margin-bottom:8px;overflow:hidden}
 .filter-head{height:36px;padding:9px 10px;font-weight:800;font-size:13px;display:flex;justify-content:space-between;align-items:center}
 .filter-head .tools{font-size:11px;color:#738791}
@@ -163,6 +164,7 @@ table tbody .metric-cell{
     <div class="filter-scroll">
       <div class="filter-title">FILTROS DEL PANEL</div>
       <div id="filters"></div>
+      <div id="campaignFilter"></div>
     </div>
     <div class="side-actions">
       <button class="primary" onclick="selectAllFilters()">Todos</button>
@@ -244,6 +246,7 @@ const FILTERS = [
 let DATA = [];
 let HEADERS = [];
 let FILTER_STATE = {};
+let CAMPAIGN_STATE = new Set();
 
 const col = name => name;
 const n = v => {
@@ -361,6 +364,105 @@ function escapeHtml(v){
   });
 }
 
+
+/* ============================================================
+   FILTRO CAMPAÑA_CARTERA · SOLO CONTROLA EL KPI RECUPERO
+   No modifica tablas ni los demás KPIs.
+   ============================================================ */
+function buildCampaignFilter(){
+  const root=document.getElementById('campaignFilter');
+  if(!root) return;
+  root.innerHTML='';
+
+  const values=orderedValues(
+    'CAMPAÑA_CARTERA',
+    [...new Set(DATA.map(r=>cleanValue('CAMPAÑA_CARTERA',r.CAMPAÑA_CARTERA)).filter(Boolean))]
+  );
+
+  CAMPAIGN_STATE=new Set(values);
+
+  const card=document.createElement('div');
+  card.className='filter-card';
+  card.dataset.filterKey='CAMPAÑA_CARTERA';
+  card.innerHTML=`
+    <div class="filter-head">
+      <span>CAMPAÑA_CARTERA</span>
+      <span class="tools" id="count-CAMPAÑA_CARTERA">Todos</span>
+    </div>
+    <div class="filter-body">
+      <input class="search" placeholder="Buscar..." oninput="filterOptions(this)">
+      <label class="option all-option">
+        <input type="checkbox" checked data-campaign-all
+               onchange="toggleCampaignFilter(this)">
+        <span>Todos</span>
+      </label>
+      <div class="opts"></div>
+    </div>`;
+
+  const opts=card.querySelector('.opts');
+  values.forEach(v=>{
+    const lab=document.createElement('label');
+    lab.className='option';
+    lab.dataset.value=v.toLowerCase();
+    lab.innerHTML=`
+      <input type="checkbox" checked data-campaign-filter value="${escapeHtml(v)}"
+             onchange="campaignChanged(this)">
+      <span>${escapeHtml(v)}</span>`;
+    opts.appendChild(lab);
+  });
+
+  root.appendChild(card);
+  updateCampaignHeader();
+}
+
+function updateCampaignHeader(){
+  const total=document.querySelectorAll('#campaignFilter input[data-campaign-filter]').length;
+  const el=document.getElementById('count-CAMPAÑA_CARTERA');
+  const all=document.querySelector('#campaignFilter input[data-campaign-all]');
+  if(el){
+    el.textContent = CAMPAIGN_STATE.size===total
+      ? 'Todos'
+      : `${CAMPAIGN_STATE.size} seleccionado${CAMPAIGN_STATE.size===1?'':'s'}`;
+  }
+  if(all) all.checked=(total>0 && CAMPAIGN_STATE.size===total);
+}
+
+function toggleCampaignFilter(checkbox){
+  const boxes=[...document.querySelectorAll('#campaignFilter input[data-campaign-filter]')];
+  if(checkbox.checked){
+    boxes.forEach(b=>{b.checked=true;CAMPAIGN_STATE.add(b.value);});
+  }else{
+    boxes.forEach(b=>b.checked=false);
+    CAMPAIGN_STATE.clear();
+  }
+  updateCampaignHeader();
+  render();
+}
+
+function campaignChanged(cb){
+  if(cb.checked) CAMPAIGN_STATE.add(cb.value);
+  else CAMPAIGN_STATE.delete(cb.value);
+  updateCampaignHeader();
+  render();
+}
+
+function recoveryRows(){
+  /*
+   * RECUPERO se calcula exclusivamente sobre registros base filtrados.
+   * CAMPAÑA_CARTERA actúa únicamente sobre este KPI.
+   * Nunca se toman filas de subtotal/total.
+   */
+  const base=filteredData();
+  if(!CAMPAIGN_STATE || CAMPAIGN_STATE.size===0) return [];
+  return base.filter(r=>
+    CAMPAIGN_STATE.has(cleanValue('CAMPAÑA_CARTERA',r.CAMPAÑA_CARTERA))
+  );
+}
+
+function calcRecovery(rows){
+  return rows.reduce((a,r)=>a+n(r.MONTO_PAGO_DOLARIZADO),0);
+}
+
 function buildFilters(){
   const root=document.getElementById('filters');
   root.innerHTML='';
@@ -452,6 +554,12 @@ function selectAllFilters(){
     FILTER_STATE[f.key]=new Set(boxes.map(x=>x.value));
     updateFilterHeader(f.key);
   });
+
+  const campaignBoxes=[...document.querySelectorAll('#campaignFilter input[data-campaign-filter]')];
+  campaignBoxes.forEach(c=>c.checked=true);
+  CAMPAIGN_STATE=new Set(campaignBoxes.map(x=>x.value));
+  updateCampaignHeader();
+
   render();
 }
 
@@ -464,6 +572,12 @@ function clearFilters(){
     FILTER_STATE[f.key]=new Set();
     updateFilterHeader(f.key);
   });
+
+  const campaignBoxes=[...document.querySelectorAll('#campaignFilter input[data-campaign-filter]')];
+  campaignBoxes.forEach(c=>c.checked=false);
+  CAMPAIGN_STATE.clear();
+  updateCampaignHeader();
+
   render();
 }
 
@@ -478,10 +592,14 @@ function dec(v){ return Number(v||0).toFixed(1); }
 function renderKPIs(){
   const rows=filteredData();
   const m=calcMetrics(rows);
+  const recuperoSeleccionado=(CAMPAIGN_STATE && CAMPAIGN_STATE.size>0)
+    ? calcRecovery(recoveryRows())
+    : null;
+
   document.getElementById('kpis').innerHTML=[
     kpiCard('Clientes únicos',numFmt(m.qUnico),'SUM UNICO SOCIO'),
     kpiCard('Cartera asignada',money(m.cartera),'CUOTA_DOLARIZADA'),
-    kpiCard('Recupero',money(m.recupero),'MONTO_PAGO_DOLARIZADO'),
+    kpiCard('Recupero',recuperoSeleccionado===null?'—':money(recuperoSeleccionado),'MONTO_PAGO_DOLARIZADO · campañas seleccionadas'),
     kpiCard('Efectividad cartera',pct(m.ef),'META 65%'),
     kpiCard('Contactados',numFmt(m.contact),'CONTACTO'),
     kpiCard('% CD',pct(m.cd),'CONTACTO / CANT_GEST_CALL'),
@@ -715,6 +833,7 @@ function processExcelBuffer(buffer, fileName){
     DATA=normalizeRows(json);
     HEADERS=Object.keys(DATA[0]||{});
     buildFilters();
+    buildCampaignFilter();
     setStatus(`Archivo cargado: ${fileName} · Hoja: ${SHEET} · Registros: ${DATA.length.toLocaleString('es-PE')} · <b>OK</b>`);
     render();
     return true;
